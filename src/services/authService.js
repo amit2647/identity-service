@@ -154,6 +154,8 @@ async function login(email, password) {
     {
       sub: user.id,
 
+      username: user.name,
+
       organizationId: membership.organization_id,
 
       role: membership.role_code,
