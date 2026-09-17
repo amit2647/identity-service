@@ -22,14 +22,17 @@ async function getUser(req, res) {
 
 async function createUser(req, res) {
   try {
-    const {
-      name,
-      email,
-      password,
-      organizationId,
-      roleCode,
-      status = "Active",
-    } = req.body;
+    const { name, email, password, roleCode, status = "Active" } = req.body;
+
+    // Taken from the token, never the body: a caller must not be able to plant a
+    // user in another organization.
+    const organizationId = Number(req.auth?.organizationId);
+
+    if (!Number.isInteger(organizationId) || organizationId <= 0) {
+      return res.status(401).json({
+        error: "Authenticated organization is required",
+      });
+    }
 
     if (typeof name !== "string" || !name.trim()) {
       return res.status(400).json({
@@ -46,12 +49,6 @@ async function createUser(req, res) {
     if (typeof password !== "string" || password.length < 8) {
       return res.status(400).json({
         error: "Password must be at least 8 characters",
-      });
-    }
-
-    if (!organizationId) {
-      return res.status(400).json({
-        error: "Organization is required",
       });
     }
 
