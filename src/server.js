@@ -1,6 +1,5 @@
 const app = require("./app");
 const pool = require("./config/database");
-const { initializeDatabase } = require("./db/initialize");
 
 const PORT = process.env.PORT || 4004;
 
@@ -9,8 +8,6 @@ async function startServer() {
     await pool.query("SELECT 1");
 
     console.log("[DB] PostgreSQL connection successful");
-
-    await initializeDatabase();
 
     app.listen(PORT, () => {
       console.log(`Identity service running on port ${PORT}`);
