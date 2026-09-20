@@ -251,8 +251,30 @@ async function getPermissions() {
   return result.rows;
 }
 
+/*
+ * Membership check that scopes the user-management endpoints.
+ *
+ * Those handlers take the target id straight from the URL, so without this a
+ * manager in one organization could read, edit or delete users belonging to
+ * another. Permission alone is not enough: every manager role holds users.read.
+ */
+async function isUserInOrganization(userId, organizationId) {
+  const result = await pool.query(
+    `
+    SELECT 1
+    FROM organization_users
+    WHERE user_id = $1
+      AND organization_id = $2
+    `,
+    [userId, organizationId],
+  );
+
+  return result.rows.length > 0;
+}
+
 module.exports = {
   getUserById,
+  isUserInOrganization,
   createUser,
   updateUser,
   deleteUser,

@@ -117,6 +117,17 @@ async function updateOrganization(req, res) {
 
 async function getOrganizationUsers(req, res) {
   try {
+    /*
+     * Scoped to the caller's own organization. The id arrives in the URL, so
+     * without this any role holding users.read could list another tenant's
+     * users simply by changing it.
+     */
+    if (Number(req.params.id) !== Number(req.auth?.organizationId)) {
+      return res.status(403).json({
+        error: "You can only view users in your own organization",
+      });
+    }
+
     const exists = await organizationService.organizationExists(req.params.id);
 
     if (!exists) {

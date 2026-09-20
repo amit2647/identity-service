@@ -34,14 +34,6 @@ router.delete(
   controller.deleteUser,
 );
 
-// Reference data for assigning a role to a user.
-router.get(
-  "/roles",
-  authenticate,
-  requirePermission("users.read"),
-  controller.getRoles,
-);
-
 router.get(
   "/permissions",
   authenticate,

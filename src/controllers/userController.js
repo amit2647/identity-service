@@ -1,7 +1,29 @@
 const userService = require("../services/userService");
 
+/*
+ * True when the target user is a member of the caller's organization.
+ *
+ * Callers report a miss as 404 rather than 403 so the response does not confirm
+ * that a user id exists in some other tenant.
+ */
+async function targetInCallerOrganization(req) {
+  const organizationId = Number(req.auth?.organizationId);
+
+  if (!Number.isInteger(organizationId) || organizationId <= 0) {
+    return false;
+  }
+
+  return userService.isUserInOrganization(req.params.id, organizationId);
+}
+
 async function getUser(req, res) {
   try {
+    if (!(await targetInCallerOrganization(req))) {
+      return res.status(404).json({
+        error: "User not found",
+      });
+    }
+
     const user = await userService.getUserById(req.params.id);
 
     if (!user) {
@@ -85,6 +107,12 @@ async function createUser(req, res) {
 
 async function updateUser(req, res) {
   try {
+    if (!(await targetInCallerOrganization(req))) {
+      return res.status(404).json({
+        error: "User not found",
+      });
+    }
+
     const { name, email, status } = req.body;
 
     if (name !== undefined && (typeof name !== "string" || !name.trim())) {
@@ -123,6 +151,12 @@ async function updateUser(req, res) {
 
 async function deleteUser(req, res) {
   try {
+    if (!(await targetInCallerOrganization(req))) {
+      return res.status(404).json({
+        error: "User not found",
+      });
+    }
+
     const user = await userService.deleteUser(req.params.id);
 
     if (!user) {
