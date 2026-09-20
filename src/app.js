@@ -5,6 +5,7 @@ const authTestRoutes = require("./routes/authTestRoutes");
 const organizationRoutes = require("./routes/organizationRoutes");
 const userRoutes = require("./routes/userRoutes");
 const roleRoutes = require("./routes/roleRoutes");
+const accessGrantRoutes = require("./routes/accessGrantRoutes");
 const app = express();
 
 app.use(cors());
@@ -27,6 +28,8 @@ app.use(authTestRoutes);
 app.use(organizationRoutes);
 
 app.use(roleRoutes);
+
+app.use(accessGrantRoutes);
 
 app.use(userRoutes);
 
