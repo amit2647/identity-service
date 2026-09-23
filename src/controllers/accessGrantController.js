@@ -1,4 +1,5 @@
 const accessGrantService = require("../services/accessGrantService");
+const guestAccessService = require("../services/guestAccessService");
 
 function getOrganizationId(req) {
   const organizationId = Number(req.auth?.organizationId);
@@ -42,15 +43,39 @@ async function getGrants(req, res) {
 
 async function createGrant(req, res) {
   try {
-    const grants = await accessGrantService.createGrant(
+    const { grants, inviteToken } = await accessGrantService.createGrant(
       getOrganizationId(req),
       req.auth?.userId,
       req.body || {},
     );
 
-    return res.status(201).json({ grants, count: grants.length });
+    return res.status(201).json({
+      grants,
+      count: grants.length,
+      // Present only for an external grant, and only on this response: the
+      // caller has to hand the link over now or reissue the grant.
+      inviteToken,
+    });
   } catch (error) {
     return handleError(res, error);
+  }
+}
+
+/*
+ * Unauthenticated by design — the token in the body is the credential. It is the
+ * only route here that does not sit behind authenticate.
+ */
+async function redeemInvite(req, res) {
+  try {
+    const session = await guestAccessService.redeemInvite(req.body?.token);
+
+    return res.json(session);
+  } catch (error) {
+    console.error("[Access Grant Controller] redeem failed:", error.message);
+
+    return res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : "Internal server error",
+    });
   }
 }
 
@@ -68,4 +93,4 @@ async function revokeGrant(req, res) {
   }
 }
 
-module.exports = { getGrants, createGrant, revokeGrant };
+module.exports = { getGrants, createGrant, revokeGrant, redeemInvite };

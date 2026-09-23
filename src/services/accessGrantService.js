@@ -1,4 +1,5 @@
 const pool = require("../config/database");
+const { issueInviteToken } = require("./guestAccessService");
 
 // A grant is deliberately short-lived. Anything longer belongs in a role.
 const MAX_DURATION_MINUTES = 24 * 60;
@@ -13,7 +14,9 @@ const GRANT_COLUMNS = `
   g.granted_by,
   g.expires_at,
   g.revoked_at,
-  g.created_at
+  g.redeemed_at,
+  g.created_at,
+  (g.invite_token_hash IS NOT NULL) AS is_invite
 `;
 
 function badRequest(message) {
@@ -87,6 +90,12 @@ async function createGrant(organizationId, grantedBy, input) {
     throw badRequest("Either user_id or subject_email is required");
   }
 
+  // An external grant materialises a user row from this address on redemption,
+  // so a malformed one would create an unusable account.
+  if (!userId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(subjectEmail)) {
+    throw badRequest("A valid email address is required");
+  }
+
   // The target must belong to the caller's organization, or a grant could be
   // written against someone else's user.
   if (userId) {
@@ -102,6 +111,13 @@ async function createGrant(organizationId, grantedBy, input) {
     }
   }
 
+  /*
+   * Someone with no account has no way to authenticate, so an external grant
+   * also mints an invite link. One token covers the whole batch — the recipient
+   * gets a single link, not one per permission — and only its hash is stored.
+   */
+  const invite = !userId && subjectEmail ? issueInviteToken() : null;
+
   const client = await pool.connect();
 
   try {
@@ -113,10 +129,19 @@ async function createGrant(organizationId, grantedBy, input) {
       const result = await client.query(
         `INSERT INTO access_grants
            (organization_id, user_id, subject_email, permission_code, reason,
-            granted_by, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW() + make_interval(mins => $7))
+            granted_by, expires_at, invite_token_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW() + make_interval(mins => $7), $8)
          RETURNING id`,
-        [organizationId, userId, subjectEmail, permissionCode, reason, grantedBy, minutes],
+        [
+          organizationId,
+          userId,
+          subjectEmail,
+          permissionCode,
+          reason,
+          grantedBy,
+          minutes,
+          invite ? invite.hash : null,
+        ],
       );
 
       created.push(result.rows[0].id);
@@ -126,7 +151,13 @@ async function createGrant(organizationId, grantedBy, input) {
     // half-revoke later.
     await client.query("COMMIT");
 
-    return Promise.all(created.map((id) => getGrantById(organizationId, id)));
+    const grants = await Promise.all(
+      created.map((id) => getGrantById(organizationId, id)),
+    );
+
+    // The plaintext token is returned exactly once, here. It is never stored and
+    // cannot be recovered later — a lost link has to be reissued.
+    return { grants, inviteToken: invite ? invite.token : null };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

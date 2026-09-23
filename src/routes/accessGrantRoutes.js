@@ -11,6 +11,13 @@ const router = express.Router();
  * can grant it to themselves — so writes are gated on system.settings, which
  * only SUPER_ADMIN holds. Same reasoning as role editing.
  */
+/*
+ * No authenticate: a guest has no token yet, and the invite token they post is
+ * the credential being checked. Kept above the :id routes so "redeem" is never
+ * read as a grant id.
+ */
+router.post("/access-grants/redeem", controller.redeemInvite);
+
 router.get(
   "/access-grants",
   authenticate,

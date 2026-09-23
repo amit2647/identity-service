@@ -51,6 +51,14 @@ async function login(email, password) {
    * =========================================================
    */
 
+  // Guests have no password_hash at all; bcrypt would throw on null rather than
+  // simply failing, turning a rejected login into a 500.
+  if (!user.password_hash) {
+    const error = new Error("Invalid email or password");
+    error.statusCode = 401;
+    throw error;
+  }
+
   const passwordValid = await bcrypt.compare(password, user.password_hash);
 
   if (!passwordValid) {
