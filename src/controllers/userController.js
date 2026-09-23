@@ -24,7 +24,10 @@ async function getUser(req, res) {
       });
     }
 
-    const user = await userService.getUserById(req.params.id);
+    const user = await userService.getUserById(
+      req.params.id,
+      req.auth?.organizationId,
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -113,7 +116,7 @@ async function updateUser(req, res) {
       });
     }
 
-    const { name, email, status } = req.body;
+    const { name, email, status, roleCode } = req.body;
 
     if (name !== undefined && (typeof name !== "string" || !name.trim())) {
       return res.status(400).json({
@@ -121,11 +124,37 @@ async function updateUser(req, res) {
       });
     }
 
-    const user = await userService.updateUser(req.params.id, {
-      name,
-      email,
-      status,
-    });
+    const changingRole = typeof roleCode === "string" && roleCode.trim();
+
+    if (changingRole) {
+      /*
+       * Assigning a role hands out permissions, so it is gated the same way
+       * editing a role's permissions is: on system.settings. Left on
+       * users.update alone, anyone who can rename a colleague could promote
+       * them to Super Admin.
+       */
+      if (!req.auth?.permissions?.includes("system.settings")) {
+        return res.status(403).json({
+          error: "You do not have permission to change a user's role",
+        });
+      }
+
+      /*
+       * Changing your own role is refused outright. Demoting yourself is a
+       * one-way door: the permission to undo it goes with the role.
+       */
+      if (Number(req.params.id) === Number(req.auth?.userId)) {
+        return res.status(400).json({
+          error: "You cannot change your own role",
+        });
+      }
+    }
+
+    const user = await userService.updateUser(
+      req.params.id,
+      { name, email, status, roleCode },
+      req.auth?.organizationId,
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -143,8 +172,8 @@ async function updateUser(req, res) {
       });
     }
 
-    res.status(500).json({
-      error: "Failed to update user",
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : "Failed to update user",
     });
   }
 }

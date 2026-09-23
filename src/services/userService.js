@@ -2,7 +2,12 @@ const bcrypt = require("bcryptjs");
 
 const pool = require("../config/database");
 
-async function getUserById(userId) {
+/*
+ * organizationId is the caller's own, so the role reported is the one that
+ * applies in their organization rather than whichever membership happened to
+ * sort first.
+ */
+async function getUserById(userId, organizationId) {
   const result = await pool.query(
     `
     SELECT
@@ -50,8 +55,20 @@ async function getUserById(userId) {
     [userId],
   );
 
+  /*
+   * Promoted to the top level to match the shape of the organization users
+   * list, which already returns role_code/role_name there. The two endpoints
+   * disagreeing is what left the edit form's role field empty.
+   */
+  const current = membershipsResult.rows.find(
+    (row) => Number(row.organization_id) === Number(organizationId),
+  );
+
   return {
     ...user,
+    role_id: current?.role_id ?? null,
+    role_code: current?.role_code ?? null,
+    role_name: current?.role_name ?? null,
     organizations: membershipsResult.rows,
   };
 }
@@ -180,33 +197,94 @@ async function createUser(data) {
   }
 }
 
-async function updateUser(userId, data) {
-  const result = await pool.query(
-    `
-    UPDATE users
-    SET
-      name = COALESCE($1, name),
-      email = COALESCE($2, email),
-      status = COALESCE($3, status),
-      updated_at = NOW()
-    WHERE id = $4
-    RETURNING
-      id,
-      name,
-      email,
-      status,
-      created_at,
-      updated_at
-    `,
-    [
-      data.name?.trim() || null,
-      data.email?.trim().toLowerCase() || null,
-      data.status || null,
-      userId,
-    ],
-  );
+/*
+ * A role lives on the organization_users membership, not on the user, so
+ * changing it is a second write. Both go in one transaction: a renamed user
+ * left on their old role would be a confusing half-save.
+ */
+async function updateUser(userId, data, organizationId) {
+  const roleCode = data.roleCode?.trim();
 
-  return result.rows[0] || null;
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      UPDATE users
+      SET
+        name = COALESCE($1, name),
+        email = COALESCE($2, email),
+        status = COALESCE($3, status),
+        updated_at = NOW()
+      WHERE id = $4
+      RETURNING
+        id,
+        name,
+        email,
+        status,
+        created_at,
+        updated_at
+      `,
+      [
+        data.name?.trim() || null,
+        data.email?.trim().toLowerCase() || null,
+        data.status || null,
+        userId,
+      ],
+    );
+
+    if (result.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    if (roleCode) {
+      /*
+       * Built-in roles have organization_id IS NULL and are shared; a custom
+       * role belongs to one organization. Matching on both stops a caller
+       * assigning another tenant's custom role.
+       */
+      const role = await client.query(
+        `SELECT id FROM roles
+         WHERE code = $1
+           AND (organization_id IS NULL OR organization_id = $2)
+         ORDER BY organization_id NULLS LAST
+         LIMIT 1`,
+        [roleCode, organizationId],
+      );
+
+      if (role.rows.length === 0) {
+        const error = new Error("That role does not exist");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const membership = await client.query(
+        `UPDATE organization_users
+         SET role_id = $1
+         WHERE user_id = $2 AND organization_id = $3
+         RETURNING user_id`,
+        [role.rows[0].id, userId, organizationId],
+      );
+
+      if (membership.rows.length === 0) {
+        const error = new Error("User not found in this organization");
+        error.statusCode = 404;
+        throw error;
+      }
+    }
+
+    await client.query("COMMIT");
+
+    return getUserById(userId, organizationId);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function deleteUser(userId) {
