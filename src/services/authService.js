@@ -173,7 +173,7 @@ async function login(email, password) {
     process.env.JWT_SECRET,
     {
       expiresIn: process.env.JWT_EXPIRES_IN || "8h",
-      issuer: "omnicore-identity-service",
+      issuer: process.env.JWT_ISSUER || "omnicore-identity-service",
     },
   );
 
