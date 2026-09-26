@@ -287,6 +287,35 @@ async function updateUser(userId, data, organizationId) {
   }
 }
 
+/*
+ * The permission codes a role grants, for the role visible to this
+ * organization (built-in, or the organization's own). Null if there is no
+ * such role.
+ */
+async function getRolePermissionCodes(roleCode, organizationId) {
+  const role = await pool.query(
+    `SELECT id FROM roles
+      WHERE code = $1 AND (organization_id IS NULL OR organization_id = $2)
+      ORDER BY organization_id NULLS LAST
+      LIMIT 1`,
+    [roleCode, organizationId],
+  );
+
+  if (!role.rows[0]) {
+    return null;
+  }
+
+  const permissions = await pool.query(
+    `SELECT p.code
+       FROM role_permissions rp
+       JOIN permissions p ON p.id = rp.permission_id
+      WHERE rp.role_id = $1`,
+    [role.rows[0].id],
+  );
+
+  return permissions.rows.map((row) => row.code);
+}
+
 async function deleteUser(userId) {
   const result = await pool.query(
     `
@@ -351,6 +380,7 @@ async function isUserInOrganization(userId, organizationId) {
 }
 
 module.exports = {
+  getRolePermissionCodes,
   getUserById,
   isUserInOrganization,
   createUser,

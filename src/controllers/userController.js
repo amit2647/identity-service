@@ -83,6 +83,33 @@ async function createUser(req, res) {
       });
     }
 
+    /*
+     * Creating a user assigns a role, and a role is a set of permissions. With
+     * system.settings any role may be assigned, as on update. Without it, only
+     * a role whose every permission the caller already holds: users.create
+     * lets someone delegate what they have, never mint a Super Admin.
+     */
+    const callerPermissions = req.auth?.permissions || [];
+
+    if (!callerPermissions.includes("system.settings")) {
+      const rolePermissions = await userService.getRolePermissionCodes(
+        roleCode.trim(),
+        organizationId,
+      );
+
+      if (rolePermissions === null) {
+        return res.status(400).json({ error: "Unknown role" });
+      }
+
+      const beyond = rolePermissions.filter((code) => !callerPermissions.includes(code));
+
+      if (beyond.length > 0) {
+        return res.status(403).json({
+          error: "You cannot assign a role with permissions you do not hold",
+        });
+      }
+    }
+
     const user = await userService.createUser({
       name,
       email,
