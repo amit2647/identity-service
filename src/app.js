@@ -4,6 +4,7 @@ const authRoutes = require("./routes/authRoutes");
 const authTestRoutes = require("./routes/authTestRoutes");
 const organizationRoutes = require("./routes/organizationRoutes");
 const userRoutes = require("./routes/userRoutes");
+const profileRoutes = require("./routes/profileRoutes");
 const roleRoutes = require("./routes/roleRoutes");
 const accessGrantRoutes = require("./routes/accessGrantRoutes");
 const app = express();
@@ -32,5 +33,7 @@ app.use(roleRoutes);
 app.use(accessGrantRoutes);
 
 app.use(userRoutes);
+
+app.use(profileRoutes);
 
 module.exports = app;
