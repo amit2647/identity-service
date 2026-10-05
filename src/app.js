@@ -3,6 +3,7 @@ const cors = require("cors");
 const authRoutes = require("./routes/authRoutes");
 const authTestRoutes = require("./routes/authTestRoutes");
 const organizationRoutes = require("./routes/organizationRoutes");
+const firmRoutes = require("./routes/firmRoutes");
 const userRoutes = require("./routes/userRoutes");
 const profileRoutes = require("./routes/profileRoutes");
 const roleRoutes = require("./routes/roleRoutes");
@@ -26,6 +27,9 @@ app.get("/health", async (req, res) => {
 app.use(authRoutes);
 
 app.use(authTestRoutes);
+
+// /organizations/current/… before /organizations/:id.
+app.use(firmRoutes);
 
 app.use(organizationRoutes);
 
