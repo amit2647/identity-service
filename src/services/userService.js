@@ -344,16 +344,36 @@ async function getRoles() {
   return result.rows;
 }
 
-async function getPermissions() {
-  const result = await pool.query(`
-    SELECT
-      id,
-      code,
-      name,
-      description
-    FROM permissions
-    ORDER BY id
-  `);
+// The profession-bundle capability permissions (seeded by migration 014;
+// mirrors bundle-sdk's CAPABILITY list). They mean nothing to an organization
+// without a bundle, so its role editor does not offer them.
+const CAPABILITY_PERMISSIONS = [
+  "bundles.manage", "customers.purge",
+  "profiles.read", "profiles.update", "profiles.lock",
+  "engagements.read", "engagements.update", "fees.read", "fees.update",
+  "obligations.read", "obligations.update", "obligations.rules",
+  "documents.read", "documents.generate",
+  "vault.read", "vault.reveal", "vault.update",
+  "files.read", "files.upload", "files.delete",
+];
+
+/*
+ * The permissions an organization can assign: the platform's own, plus the
+ * capability permissions and its bundle's namespaced ones once it has a
+ * bundle installed. Another bundle's permissions are never listed.
+ */
+async function getPermissions(organizationId) {
+  const result = await pool.query(
+    `
+    SELECT p.id, p.code, p.name, p.description
+    FROM permissions p
+    LEFT JOIN organization_bundles ob ON ob.organization_id = $1
+    WHERE (p.bundle_key IS NULL AND (p.code <> ALL($2::text[]) OR ob.id IS NOT NULL))
+       OR (p.bundle_key IS NOT NULL AND p.bundle_key = ob.bundle_key)
+    ORDER BY p.id
+    `,
+    [organizationId, CAPABILITY_PERMISSIONS],
+  );
 
   return result.rows;
 }

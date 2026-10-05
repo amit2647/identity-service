@@ -250,7 +250,7 @@ async function getRoles(req, res) {
 
 async function getPermissions(req, res) {
   try {
-    const permissions = await userService.getPermissions();
+    const permissions = await userService.getPermissions(req.auth.organizationId);
 
     res.json(permissions);
   } catch (error) {
