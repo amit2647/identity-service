@@ -118,6 +118,39 @@ describe("role templates", () => {
     assert.equal(flag.params[3], "0.2.0");
   });
 
+  test("an edited role is reported with the firm's and the bundle's content, and can be accepted or dismissed", async () => {
+    const shippedV1 = { name: "Partner", description: null, permissions: ["customers.read"] };
+
+    existingRole = { id: 5, name: "Senior Partner", description: null, source_checksum: checksum(shippedV1) };
+    existingCodes = ["customers.read"];
+
+    const kept = await installRoles(7, "ca-practice", "0.2.0", { namespace: "ca", roles: [PARTNER] });
+    assert.equal(kept.customized.length, 1);
+    assert.equal(kept.customized[0].kind, "role");
+    assert.equal(kept.customized[0].key, PARTNER.key);
+    assert.equal(kept.customized[0].mine.name, "Senior Partner");
+    assert.equal(kept.customized[0].theirs.name, "Partner");
+
+    statements = [];
+    const accepted = await installRoles(7, "ca-practice", "0.2.0", { namespace: "ca", roles: [PARTNER] }, { accept: new Set([`role:${PARTNER.key}`]) });
+    assert.equal(accepted.updated, 1);
+    assert.ok(ran(/UPDATE roles SET name/));
+
+    statements = [];
+    const dismissed = await installRoles(7, "ca-practice", "0.2.0", { namespace: "ca", roles: [PARTNER] }, { dismiss: new Set([`role:${PARTNER.key}`]) });
+    const keep = statements.find((statement) => /update_available_version = CASE/.test(statement.text));
+    assert.equal(dismissed.customized.length, 0);
+    assert.equal(ran(/UPDATE roles SET name/), false);
+    assert.equal(keep.params[5], true);
+  });
+
+  test("a dry run rolls back", async () => {
+    await installRoles(7, "ca-practice", "0.1.0", { namespace: "ca", roles: [PARTNER] }, { dryRun: true });
+
+    assert.ok(ran(/^ROLLBACK/));
+    assert.equal(ran(/^COMMIT/), false);
+  });
+
   test("an untouched role takes the new version", async () => {
     const shippedV1 = { name: "Partner", description: null, permissions: ["customers.read"] };
 

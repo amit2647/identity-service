@@ -1,5 +1,5 @@
 const pool = require("../config/database");
-const { decide } = require("./bundleSync");
+const { customized, decide, optionsFor } = require("./bundleSync");
 
 /*
  * Bundle install steps owned by identity-service: a bundle's own namespaced
@@ -41,13 +41,14 @@ function checkNamespace(namespace) {
   }
 }
 
-async function inTransaction(work) {
+// A dry run does all the work and rolls it back, to report what it would do.
+async function inTransaction(work, { dryRun = false } = {}) {
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
     const result = await work(client);
-    await client.query("COMMIT");
+    await client.query(dryRun ? "ROLLBACK" : "COMMIT");
     return result;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -62,7 +63,7 @@ async function inTransaction(work) {
  * own codes are shared by every organization that installs it. A code owned
  * by the platform or another bundle is never taken over.
  */
-async function installPermissions(bundleKey, { namespace, permissions = [] }) {
+async function installPermissions(bundleKey, { namespace, permissions = [] }, choices = {}) {
   checkNamespace(namespace);
 
   const invalid = permissions.filter(
@@ -105,7 +106,7 @@ async function installPermissions(bundleKey, { namespace, permissions = [] }) {
     );
 
     return { installed };
-  });
+  }, choices);
 }
 
 async function roleContent(client, role) {
@@ -137,7 +138,7 @@ async function setPermissions(client, roleId, codes) {
  * key. Templates the bundle no longer ships are retired, never deleted: users
  * may still hold them.
  */
-async function installRoles(organizationId, bundleKey, version, { namespace, roles = [] }) {
+async function installRoles(organizationId, bundleKey, version, { namespace, roles = [] }, choices = {}) {
   checkNamespace(namespace);
 
   const forbidden = roles.flatMap((role) => (role.permissions || []).filter(isForbiddenInTemplate).map((code) => `${role.key}: ${code}`));
@@ -156,7 +157,7 @@ async function installRoles(organizationId, bundleKey, version, { namespace, rol
   }
 
   return inTransaction(async (client) => {
-    const summary = { inserted: 0, updated: 0, unchanged: 0, kept: 0, retired: 0 };
+    const summary = { inserted: 0, updated: 0, unchanged: 0, kept: 0, retired: 0, customized: [] };
 
     for (const template of roles) {
       const templateKey = `${namespace}_${template.key}`;
@@ -178,7 +179,7 @@ async function installRoles(organizationId, bundleKey, version, { namespace, rol
 
       const row = found.rows[0];
       const existing = row ? { content: await roleContent(client, row), sourceChecksum: row.source_checksum } : null;
-      const { action, shippedChecksum, flag } = decide(existing, shipped);
+      const { action, shippedChecksum, flag, acknowledge } = decide(existing, shipped, optionsFor(choices, "role", template.key));
 
       if (action === "insert") {
         const created = await client.query(
@@ -200,15 +201,18 @@ async function installRoles(organizationId, bundleKey, version, { namespace, rol
       }
 
       if (action === "keep") {
-        // The firm's edit stands; the shipped checksum stays what it came from.
+        // The firm's edit stands; the shipped checksum stays what it came from,
+        // unless the admin dismissed this version (bundleSync).
         await client.query(
           `UPDATE roles
            SET bundle_key = $1, template_key = $2, retired_at = NULL,
-               update_available_version = CASE WHEN $3 THEN $4 ELSE update_available_version END
+               update_available_version = CASE WHEN $6 THEN NULL WHEN $3 THEN $4 ELSE update_available_version END,
+               source_checksum = CASE WHEN $6 THEN $7 ELSE source_checksum END
            WHERE id = $5`,
-          [bundleKey, templateKey, flag, version, row.id],
+          [bundleKey, templateKey, flag, version, row.id, Boolean(acknowledge), shippedChecksum],
         );
         summary.kept += 1;
+        if (flag) summary.customized.push(customized("role", template.key, row.name, existing.content, shipped, version));
         continue;
       }
 
@@ -232,7 +236,7 @@ async function installRoles(organizationId, bundleKey, version, { namespace, rol
     summary.retired = retired.rowCount;
 
     return summary;
-  });
+  }, choices);
 }
 
 module.exports = { installPermissions, installRoles, isForbiddenInTemplate };

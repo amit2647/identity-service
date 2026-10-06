@@ -1,4 +1,5 @@
 const bundleInstallService = require("../services/bundleInstallService");
+const { choicesOf } = require("../services/bundleSync");
 
 const KEY = /^[a-z][a-z0-9-]{1,59}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
@@ -27,7 +28,7 @@ function handleError(res, error) {
 async function installPermissions(req, res) {
   try {
     const { key } = params(req);
-    const result = await bundleInstallService.installPermissions(key, req.body || {});
+    const result = await bundleInstallService.installPermissions(key, req.body || {}, choicesOf(req));
 
     return res.json(result);
   } catch (error) {
@@ -38,7 +39,7 @@ async function installPermissions(req, res) {
 async function installRoles(req, res) {
   try {
     const { key, version } = params(req);
-    const result = await bundleInstallService.installRoles(req.auth.organizationId, key, version, req.body || {});
+    const result = await bundleInstallService.installRoles(req.auth.organizationId, key, version, req.body || {}, choicesOf(req));
 
     return res.json(result);
   } catch (error) {
