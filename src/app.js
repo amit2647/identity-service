@@ -9,6 +9,7 @@ const profileRoutes = require("./routes/profileRoutes");
 const roleRoutes = require("./routes/roleRoutes");
 const bundleInstallRoutes = require("./routes/bundleInstallRoutes");
 const accessGrantRoutes = require("./routes/accessGrantRoutes");
+const setupRoutes = require("./routes/setupRoutes");
 const app = express();
 
 app.use(cors());
@@ -24,6 +25,9 @@ app.get("/health", async (req, res) => {
 });
 
 /* Routes */
+// First-run setup: public, and closed once an administrator exists.
+app.use(setupRoutes);
+
 app.use(authRoutes);
 
 app.use(authTestRoutes);
